@@ -122,8 +122,8 @@ if uploader_raw and uploader_ref:
 
     if raw_cols and ref_cols and ref_value_cols and output_config:
         # 创建匹配key列
-        df_raw["__merge_key__"] = df_raw[raw_cols].astype(str).agg(" | ".join, axis=1)
-        df_ref["__merge_key__"] = df_ref[ref_cols].astype(str).agg(" | ".join, axis=1)
+        df_raw["__merge_key__"] = df_raw[raw_cols].fillna("nan").astype(str).agg(" | ".join, axis=1)
+        df_ref["__merge_key__"] = df_ref[ref_cols].fillna("nan").astype(str).agg(" | ".join, axis=1)
 
         # 创建映射字典
         mapping_dict = {}
@@ -277,12 +277,40 @@ if uploader_raw and uploader_ref:
                 )
 
         # 创建更新后的映射文件
-        updated_mapping = pd.DataFrame({
-            "Original": list(mapping_dict.keys()),
-            **{f"Calibrated_{col}": [mapping_dict[k].get(col) for k in mapping_dict.keys()] for col in ref_value_cols}
-        }).drop_duplicates()
+        # 首先创建一个新的DataFrame，保持原始参考映射表的所有列
+        updated_mapping = df_ref.copy()
+        
+        # 更新校准值列
+        for ref_col in ref_value_cols:
+            updated_mapping[ref_col] = updated_mapping["__merge_key__"].map(lambda x: mapping_dict.get(x, {}).get(ref_col))
+        
+        # 添加新的映射（在原始参考映射表中不存在的）
+        new_mappings = []
+        for key, values in mapping_dict.items():
+            if key not in updated_mapping["__merge_key__"].values:
+                # 从原始数据中获取对应的行
+                matching_row = df_raw[df_raw["__merge_key__"] == key].iloc[0] if len(df_raw[df_raw["__merge_key__"] == key]) > 0 else None
+                
+                if matching_row is not None:
+                    new_row = {col: matching_row[col] for col in raw_cols}
+                    # 添加参考映射表中的其他列，设置为空值
+                    for col in df_ref.columns:
+                        if col not in raw_cols and col != "__merge_key__":
+                            new_row[col] = None
+                    # 添加校准值
+                    for ref_col in ref_value_cols:
+                        new_row[ref_col] = values.get(ref_col)
+                    new_row["__merge_key__"] = key
+                    new_mappings.append(new_row)
+        
+        if new_mappings:
+            new_mappings_df = pd.DataFrame(new_mappings)
+            updated_mapping = pd.concat([updated_mapping, new_mappings_df], ignore_index=True)
+        
+        # 删除临时列
+        updated_mapping = updated_mapping.drop(columns=["__merge_key__"])
 
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.download_button(
                 "Download Updated Reference Mapping (CSV)", 
@@ -301,6 +329,23 @@ if uploader_raw and uploader_ref:
                     f.read(), 
                     file_name="updated_mapping.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        with col3:
+            # 如果是JSON格式的参考映射，提供JSON格式下载
+            if uploader_ref.name.endswith(".json"):
+                # 将映射字典转换为JSON格式
+                json_mapping = {}
+                for key, values in mapping_dict.items():
+                    json_mapping[key] = values
+                
+                # 转换为JSON字符串
+                json_str = pd.Series(json_mapping).to_json(orient='index')
+                
+                st.download_button(
+                    "Download Updated Reference Mapping (JSON)", 
+                    json_str,
+                    file_name="updated_mapping.json",
+                    mime="application/json"
                 )
 else:
     st.warning("Please upload both raw data and reference mapping file.")
