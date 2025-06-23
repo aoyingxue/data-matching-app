@@ -11,12 +11,15 @@ uploader_ref = st.sidebar.file_uploader("Upload reference mapping", type=["csv",
 
 if uploader_raw and uploader_ref:
     # 读取原始数据
+    raw_sheet_name = None
     if uploader_raw.name.endswith(".xlsx"):
         df_raw = pd.read_excel(uploader_raw, sheet_name=None)
         if len(df_raw) > 1:
             sheet_raw = st.sidebar.selectbox("Select sheet from raw data", options=list(df_raw.keys()))
             df_raw = df_raw[sheet_raw]
+            raw_sheet_name = sheet_raw
         else:
+            raw_sheet_name = list(df_raw.keys())[0]
             df_raw = list(df_raw.values())[0]
     elif uploader_raw.name.endswith(".json"):
         df_raw = pd.read_json(uploader_raw)
@@ -27,12 +30,15 @@ if uploader_raw and uploader_ref:
         df_raw = pd.read_csv(uploader_raw)
 
     # 读取参考数据
+    ref_sheet_name = None
     if uploader_ref.name.endswith(".xlsx"):
         df_ref = pd.read_excel(uploader_ref, sheet_name=None)
         if len(df_ref) > 1:
             sheet_ref = st.sidebar.selectbox("Select sheet from reference data", options=list(df_ref.keys()))
             df_ref = df_ref[sheet_ref]
+            ref_sheet_name = sheet_ref
         else:
+            ref_sheet_name = list(df_ref.keys())[0]
             df_ref = list(df_ref.values())[0]
     elif uploader_ref.name.endswith(".json"):
         df_ref = pd.read_json(uploader_ref)
@@ -266,7 +272,8 @@ if uploader_raw and uploader_ref:
         with col2:
             # 创建一个Excel writer对象
             buffer = pd.ExcelWriter("calibrated_data.xlsx", engine='openpyxl')
-            result_df.to_excel(buffer, index=False, sheet_name='Calibrated Data')
+            sheet_name_to_use = raw_sheet_name if raw_sheet_name else 'Calibrated Data'
+            result_df.to_excel(buffer, index=False, sheet_name=sheet_name_to_use)
             buffer.close()
             with open("calibrated_data.xlsx", "rb") as f:
                 st.download_button(
@@ -321,7 +328,8 @@ if uploader_raw and uploader_ref:
         with col2:
             # 创建一个Excel writer对象
             buffer = pd.ExcelWriter("updated_mapping.xlsx", engine='openpyxl')
-            updated_mapping.to_excel(buffer, index=False, sheet_name='Updated Mapping')
+            sheet_name_to_use = ref_sheet_name if ref_sheet_name else 'Updated Mapping'
+            updated_mapping.to_excel(buffer, index=False, sheet_name=sheet_name_to_use)
             buffer.close()
             with open("updated_mapping.xlsx", "rb") as f:
                 st.download_button(
